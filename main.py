@@ -9,47 +9,81 @@ import pyautogui
 
 # Maybe use fan rotation speed peripheral if possible?
 
-img_size = 64
-block_size = 4
-screen_width, screen_height = pyautogui.size()
-rand_number = 0
+
+BIT_SIZE = 256
+IMG_SIZE, N = 64
+BLOCK_SIZE = 4
+SCREEN_WIDTH, SCREEN_HEIGHT = pyautogui.size()
+RAND_NUMBER = 0
+MASK = 2**BIT_SIZE - 1
+K = 5000
 
 # Thread-safe entropy storage
-image = [[' ' for _ in range(img_size)] for _ in range(img_size)]
+IMAGE = [[' ' for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
 
 # Map mouse coordinates on screen to 64x64 grid
 def map_mouse_to_image(x, y):
-    x_small = int(x / screen_width * img_size)
-    y_small = int(y / screen_height * img_size)
+    x_small = int(x / SCREEN_WIDTH * IMG_SIZE)
+    y_small = int(y / SCREEN_HEIGHT * IMG_SIZE)
     
     # Clamp values just in case
-    x_small = min(max(x_small, 0), img_size - 1)
-    y_small = min(max(y_small, 0), img_size - 1)
+    x_small = min(max(x_small, 0), IMG_SIZE - 1)
+    y_small = min(max(y_small, 0), IMG_SIZE - 1)
     
     return x_small, y_small
 
+# Mapping the IMAGE to a 256 bit RAND_NUMBER
 def map_image_to_256():
-    for i in range(img_size):
-        for j in range(img_size):
-            if image[i][j] == '*':
-                rand_number >> i * (block_size*block_size) + j | 1
-    print(rand_number)
+    global RAND_NUMBER
+    for i in range(0, IMG_SIZE, 4):
+        for j in range(0, IMG_SIZE, 4):
+            count = 0
+            for x in range(4):
+                for y in range(4):
+                    if IMAGE[i+x][j+y] == '*':
+                        print(x,y)
+                        count += 1
+            if (count % 2) == 1:
+                print(i/4, j/4, count)
+                RAND_NUMBER |= 1 << int(i/4) * BLOCK_SIZE**2 + int(j/4)
+    RAND_NUMBER &= MASK
+    print(RAND_NUMBER)
+
+# Chaotic map of IMAGE (WORK IN PROGRESS)
+def chaotic_map():
+    global IMAGE
+    mapping = [[(-1,-1) for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
+
+    for x in range(IMG_SIZE):
+        for y in range(IMG_SIZE):
+            x_mapped = (x + y) % N
+            y_mapped = (y + K * np.sin(2 * np.pi * x / N)) % N # Apparently the formula in the paper doesn't make sense
+            mapping[x][y] = (x_mapped, y_mapped)
+
+    for _ in range(50):
+        image_copy = IMAGE.copy()
+        for x in range(IMG_SIZE):
+            for y in range(IMG_SIZE):
+                x_new = mapping[x][y][0]
+                y_new = mapping[x][y][1]
+                image_copy[x_new][y_new] = IMAGE[x][y]
+        IMAGE = image_copy
 
 
 # Print all the tracked mouse coordinates
 def print_trackpad():
-    for i in range(img_size):
-        for j in range(img_size):
-            print(image[j][i], end=' ')
+    for i in range(IMG_SIZE):
+        for j in range(IMG_SIZE):
+            print(IMAGE[j][i], end=' ')
         print()
 
 print_trackpad()
-print(f"Screen size: {screen_width}x{screen_height} pixels")
+print(f"Screen size: {SCREEN_WIDTH}x{SCREEN_HEIGHT} pixels")
 
 # Action on move of mouse
 def on_move(x, y, injected):
     x, y = map_mouse_to_image(x,y)
-    image[y][x] = '*'
+    IMAGE[y][x] = '*'
     print('Pointer moved to {}; it was {}'.format(
         (x, y), 'faked' if injected else 'not faked'))
 
@@ -95,7 +129,7 @@ def on_exit():
     print("\nProgram exiting. Stopping listeners...")
     mouse_listener.stop()
     keyboard_listener.stop()
-    if image:
+    if IMAGE:
         # Optional: final random bytes from remaining entropy
         print_trackpad()
         map_image_to_256()
