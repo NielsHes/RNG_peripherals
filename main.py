@@ -1,12 +1,16 @@
 import numpy as np
 from pynput import mouse, keyboard
-import sys
+import os
 import time
 import atexit
 import pyautogui
 import csv
+import threading
 from datetime import datetime
 import time as tm
+import clr
+clr.AddReference(r'C:/Users/niels/Documents/S_SS/OpenHardwareMonitor/OpenHardwareMonitorLib') 
+from OpenHardwareMonitor.Hardware import Computer, SensorType
 
 # Maybe use fan rotation speed peripheral if possible? nope
 HEADS, TAILS = 0, 0
@@ -15,18 +19,21 @@ BIT_SIZE = 256
 IMG_SIZE, N = 64, 64
 BLOCK_SIZE = 4
 SCREEN_WIDTH, SCREEN_HEIGHT = pyautogui.size()
+CHAOTIC_MAP = []
 RAND_NUMBER = 0
 MASK = 2**BIT_SIZE - 1
 K = 5000
 EVENTS = []
-CSV_FILE = ""
 VALUE = 0
-KEY_TO_VALUE = {}  # EMPTY AFTER EACH ROUND?
+KEY_TO_VALUE = {}
+ACTIVE_MOUSE, ACTIVE_KEYBOARD = False, False
+PATH = os.getcwd() + "\data"
+CSV_FILE = PATH + "\interactions.csv"
 
 # Thread-safe entropy storage
-IMAGE_MOUSE = [[" " for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
-IMAGE_KEYBOARD = [[" " for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
-
+IMAGE_MOUSE = [[' ' for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
+IMAGE_KEYBOARD = [[' ' for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
+IMAGE_SYSTEM_HW = [[' ' for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
 
 # Return milliseconds since epoch
 def get_milliseconds():
@@ -34,11 +41,9 @@ def get_milliseconds():
 
 
 # Write random number to TXT file
-def write_rn(peripheral, active_idle, number):
-    with open(
-        f"{peripheral}_{active_idle}_rns.txt", "a", newline="", encoding="utf-8"
-    ) as file:
-        file.write(f"{number}\n")
+def write_rn(number, peripheral):
+    with open(f"{PATH}\{peripheral}_rns.txt", "a", newline="", encoding="utf-8") as file:
+        file.write(f"{number}")
 
 
 # Write to CSV file
@@ -60,6 +65,12 @@ def map_mouse_to_image(x, y):
 
     return x_small, y_small
 
+# Function mapping values to coordinates in 64x64 grid
+def map_value_to_image(value, image):
+    value %= IMG_SIZE**2
+    y = value // IMG_SIZE
+    x = value % IMG_SIZE
+    image[y][x] = "*"
 
 # Compute the XOR of two images
 def xor_images(image1, image2):
@@ -77,9 +88,11 @@ def xor_images(image1, image2):
 
 
 # Mapping the IMAGE to a 256 bit RAND_NUMBER
-def map_image_to_256(image, peripheral, active_idle):
-    global HEADS, TAILS
-    rand_number = 0
+def map_image_to_256(image, peripheral):
+    rand_number = ""
+    indices = 0
+
+    image = map_chaotic(image)
 
     for i in range(0, IMG_SIZE, 4):
         for j in range(0, IMG_SIZE, 4):
@@ -89,44 +102,43 @@ def map_image_to_256(image, peripheral, active_idle):
                 for y in range(4):
                     if image[i + x][j + y] == "*":
                         count += 1
+                        indices += i+x + j+y
 
             if (count % 2) == 1:
-                # print(i/4, j/4, count)
-                rand_number |= 1 << int(i / 4) * BLOCK_SIZE**2 + int(j / 4)
+                rand_number = "1" + rand_number
+            else:
+                rand_number = "0" + rand_number
+    rand_number = "0b" + rand_number
 
-    rand_number &= MASK
-    if rand_number % 100 >= 50:
-        print("HEADS")
-        HEADS += 1
-    else:
-        print("TAILS")
-        TAILS += 1
+    write_rn(rand_number, peripheral)
 
-    write_rn(peripheral, active_idle, rand_number)
+# Precompute chaotic map
+def compute_chaotic_map():
+    global CHAOTIC_MAP
+    CHAOTIC_MAP = [[(x,y) for x in range(IMG_SIZE)] for y in range(IMG_SIZE)]
+    
+    # Compute chaotic map for 50 iterations
+    for _ in range(50):
+        for x in range(IMG_SIZE):
+            for y in range(IMG_SIZE):
+                x_map = CHAOTIC_MAP[x][y][0]
+                y_map = CHAOTIC_MAP[x][y][1]
+                x_new = int((x_map + y_map) % N)
+                y_new = int((y_map + K * np.sin(N / 2 * np.pi)) % N)
+                CHAOTIC_MAP[x][y] = (x_new, y_new)
 
 
 # Chaotic map of IMAGE (WORK IN PROGRESS)
-def chaotic_map():
-    global IMAGE_MOUSE
-    mapping = [[(-1, -1) for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
+def map_chaotic(image):
+    image_chaotic = [[' ' for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
 
     for x in range(IMG_SIZE):
         for y in range(IMG_SIZE):
-            x_mapped = (x + y) % N
-            y_mapped = (
-                y + K * np.sin(N / 2 * np.pi)
-            ) % N  # Apparently the formula in the paper doesn't make sense
-            mapping[x][y] = (x_mapped, y_mapped)
+            x_map = CHAOTIC_MAP[x][y][0]
+            y_map = CHAOTIC_MAP[x][y][1]
+            image_chaotic[x_map][y_map] = image[x][y]
 
-    for _ in range(50):
-        image_copy = IMAGE_MOUSE.copy()
-        for x in range(IMG_SIZE):
-            for y in range(IMG_SIZE):
-                x_new = mapping[x][y][0]
-                y_new = mapping[x][y][1]
-                image_copy[x_new][y_new] = IMAGE_MOUSE[x][y]
-        IMAGE_MOUSE = image_copy
-
+    return image_chaotic
 
 # Print all the tracked mouse coordinates
 def print_trackpad(image):
@@ -138,7 +150,10 @@ def print_trackpad(image):
 
 # Action on move of mouse
 def on_move(x, y, injected):
+    global ACTIVE_MOUSE
+
     log_event("mouse", "move", f"{x}, {y}")
+    ACTIVE_MOUSE = True
 
     x, y = map_mouse_to_image(x, y)
     IMAGE_MOUSE[y][x] = "*"
@@ -168,18 +183,19 @@ def on_scroll(x, y, dx, dy, injected):
 
 # Action on press of keyboard key
 def on_press(key):
-    global VALUE
+    global ACTIVE_KEYBOARD, VALUE
 
     log_event("keyboard", "press", str(key))
+    ACTIVE_KEYBOARD = True
 
+    # Map key to number if mapping does not exist
     if key not in KEY_TO_VALUE:
         VALUE += 1
         KEY_TO_VALUE[key] = VALUE
-
-    unique_value_image = KEY_TO_VALUE[key] * get_milliseconds() % IMG_SIZE**2
-    y = unique_value_image // IMG_SIZE
-    x = unique_value_image % IMG_SIZE
-    IMAGE_KEYBOARD[y][x] = "*"
+    
+    # Map key press to coordinates in the grid
+    value_key = KEY_TO_VALUE[key] * get_milliseconds()
+    map_value_to_image(value_key, IMAGE_KEYBOARD)
 
     # print(f'Key {key} pressed')  # Print pressed key
 
@@ -189,36 +205,61 @@ def on_release(key):
     log_event("keyboard", "release", str(key))
 
     # print(f'Key {key} released')  # Print released key
-    if str(key) == "Key.esc":  # Stop listener on ESC
-        return False
+
+# Retrieve system hardware peripheral information
+def system_hardware_peripherals(stop_event):
+    # Temperature, Load, Clock, Power
+    global HEADS, TAILS
+
+    pc = Computer()
+    pc.MainboardEnabled = True
+    pc.CPUEnabled = True
+    pc.GPUEnabled = True
+    pc.Open()
+
+    while not stop_event.is_set():
+        sum = 0
+        for hw in pc.Hardware:
+            hw.Update()
+
+            for sensor in hw.Sensors:
+                if (sensor.SensorType == SensorType.Temperature or sensor.SensorType == SensorType.Load or
+                    sensor.SensorType == SensorType.Clock or sensor.SensorType == SensorType.Power):
+                    sum += int(sensor.Value)
+                    # print(hw.Name, sensor.Name, sensor.Value)
+
+            for sub in hw.SubHardware:
+                sub.Update()
+                for sensor in sub.Sensors:
+                    if (sensor.SensorType == SensorType.Temperature or sensor.SensorType == SensorType.Load or
+                        sensor.SensorType == SensorType.Clock or sensor.SensorType == SensorType.Power):
+                        sum += int(sensor.Value)
+                        # print(hw.Name, sensor.Name, sensor.Value)
+
+        map_value_to_image(sum, IMAGE_SYSTEM_HW)
 
 
 def main():
 
-    global CSV_FILE
-    global IMAGE_MOUSE, IMAGE_KEYBOARD
-
+    global IMAGE_MOUSE, IMAGE_KEYBOARD, IMAGE_SYSTEM_HW
+    global ACTIVE_MOUSE, ACTIVE_KEYBOARD
+    
     print(f"Screen size: {SCREEN_WIDTH}x{SCREEN_HEIGHT} pixels")
 
-    active_idle = "active"
-
-    if len(sys.argv) > 1:
-        if sys.argv[2] == "idle":
-            active_idle = "idle"
-        elif sys.argv[2] != "active":
-            exit()
-
-    CSV_FILE = f"{active_idle}_interactions.csv"
-
+    # Empty the files
     with open(CSV_FILE, "w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerow(["timestamp", "peripheral", "event", "details"])
 
-    for peripheral in ["mouse", "keyboard", "combination"]:
-        with open(
-            f"{peripheral}_{active_idle}_rns.txt", "w", newline="", encoding="utf-8"
-        ) as file:
+    for peripheral in ["mouse", "keyboard", "combination", "idle"]:
+        with open(f"{PATH}\{peripheral}_rns.txt", "w", newline="", encoding="utf-8") as file:
             file.write("")
+
+    # Compute the chaotic map
+    compute_chaotic_map()
+
+    stop_event = threading.Event()
+    system_hardware_thread = threading.Thread(target=system_hardware_peripherals, name="System hardware peripherals", args=(stop_event,))
 
     # Mouse listener
     mouse_listener = mouse.Listener(
@@ -228,7 +269,8 @@ def main():
     # Keyboard listener
     keyboard_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
 
-    # Start listening
+    # Start recording and listening
+    system_hardware_thread.start()
     mouse_listener.start()
     keyboard_listener.start()
 
@@ -240,22 +282,45 @@ def main():
         print_trackpad(IMAGE_MOUSE)
         print()
         print_trackpad(IMAGE_KEYBOARD)
-        print(HEADS, TAILS)
+        print()
+        print_trackpad(IMAGE_SYSTEM_HW)
 
     atexit.register(on_exit)
 
+    nr_m = nr_k = nr_c = nr_hw = 0
+
+    # Keep program alive until keyboard interrupt
     try:
         while True:
-            time.sleep(5)
-            map_image_to_256(IMAGE_MOUSE, "mouse", active_idle)
-            map_image_to_256(IMAGE_KEYBOARD, "keyboard", active_idle)
-            map_image_to_256(
-                xor_images(IMAGE_MOUSE, IMAGE_KEYBOARD), "combination", active_idle
-            )
-            IMAGE_MOUSE = [[" " for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
-            IMAGE_KEYBOARD = [[" " for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
+            time.sleep(1)
+
+            if ACTIVE_MOUSE:
+                nr_m += 1
+                print("MOUSE", nr_m)
+                map_image_to_256(IMAGE_MOUSE, "mouse")
+            if ACTIVE_KEYBOARD:
+                nr_k += 1
+                print("KEYBOARD", nr_k)
+                map_image_to_256(IMAGE_KEYBOARD, "keyboard")
+            if ACTIVE_MOUSE and ACTIVE_KEYBOARD:
+                nr_c += 1
+                print("COMBINATION", nr_c)
+                map_image_to_256(xor_images(IMAGE_MOUSE, IMAGE_KEYBOARD), "combination")            
+            if not ACTIVE_MOUSE and not ACTIVE_KEYBOARD:
+                nr_hw += 1
+                print("IDLE", nr_hw)
+                map_image_to_256(IMAGE_SYSTEM_HW, "idle")
+            print()
+            
+            ACTIVE_MOUSE, ACTIVE_KEYBOARD = False, False
+            IMAGE_MOUSE = [[' ' for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
+            IMAGE_KEYBOARD = [[' ' for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
+            IMAGE_SYSTEM_HW = [[' ' for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
+
     except KeyboardInterrupt:
         print("Keyboard interrupt received. Exiting...")
+        stop_event.set()
+        system_hardware_thread.join()
 
 
 if __name__ == "__main__":
