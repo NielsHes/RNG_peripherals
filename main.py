@@ -10,7 +10,6 @@ from datetime import datetime
 import time as tm
 import clr
 clr.AddReference(r'C:/Users/niels/Documents/S_SS/OpenHardwareMonitor/OpenHardwareMonitorLib') 
-# e.g. clr.AddReference(r'OpenHardwareMonitor/OpenHardwareMonitorLib'), without .dll
 from OpenHardwareMonitor.Hardware import Computer, SensorType
 
 # Maybe use fan rotation speed peripheral if possible?
@@ -42,7 +41,7 @@ def get_milliseconds():
 
 # Write random number to TXT file
 def write_rn(number, peripheral):
-    with open(f"{peripheral}_rns.txt", "a", newline="", encoding="utf-8") as file:
+    with open(f"{PATH}\{peripheral}_rns.txt", "a", newline="", encoding="utf-8") as file:
         file.write(f"{number}")
 
 # Write to CSV file
@@ -84,7 +83,7 @@ def xor_images(image1, image2):
 
 # Mapping the IMAGE to a 256 bit RAND_NUMBER
 def map_image_to_256(image, peripheral):
-    rand_number = "0b"
+    rand_number = ""
     indices = 0
 
     image = map_chaotic(image)
@@ -100,9 +99,10 @@ def map_image_to_256(image, peripheral):
                         indices += i+x + j+y
 
             if (count % 2) == 1:
-                rand_number += "1"
+                rand_number = "1" + rand_number
             else:
-                rand_number += "0"
+                rand_number = "0" + rand_number
+    rand_number = "0b" + rand_number
 
     write_rn(rand_number, peripheral)
 
@@ -201,7 +201,6 @@ def system_hardware_peripherals(stop_event):
 
     pc = Computer()
     pc.MainboardEnabled = True
-    pc.FanControllerEnabled = True
     pc.CPUEnabled = True
     pc.GPUEnabled = True
     pc.Open()
@@ -279,22 +278,28 @@ def main():
 
     atexit.register(on_exit)
 
+    nr_m = nr_k = nr_c = nr_hw = 0
+
     # Keep program alive until keyboard interrupt
     try:
         while True:
             time.sleep(1)
 
             if ACTIVE_MOUSE:
-                print("MOUSE")
+                nr_m += 1
+                print("MOUSE", nr_m)
                 map_image_to_256(IMAGE_MOUSE, "mouse")
             if ACTIVE_KEYBOARD:
-                print("KEYBOARD")
+                nr_k += 1
+                print("KEYBOARD", nr_k)
                 map_image_to_256(IMAGE_KEYBOARD, "keyboard")
             if ACTIVE_MOUSE and ACTIVE_KEYBOARD:
-                print("COMBINATION")
+                nr_c += 1
+                print("COMBINATION", nr_c)
                 map_image_to_256(xor_images(IMAGE_MOUSE, IMAGE_KEYBOARD), "combination")            
             if not ACTIVE_MOUSE and not ACTIVE_KEYBOARD:
-                print("IDLE")
+                nr_hw += 1
+                print("IDLE", nr_hw)
                 map_image_to_256(IMAGE_SYSTEM_HW, "idle")
             print()
             
