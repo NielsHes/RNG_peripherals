@@ -213,7 +213,8 @@ def system_hardware_peripherals(stop_event):
             for sensor in hw.Sensors:
                 if (sensor.SensorType == SensorType.Temperature or sensor.SensorType == SensorType.Load or
                     sensor.SensorType == SensorType.Clock or sensor.SensorType == SensorType.Power):
-                    sum += int(sensor.Value)
+                    if sensor.Value:
+                        sum += int(sensor.Value)
                     # print(hw.Name, sensor.Name, sensor.Value)
 
             for sub in hw.SubHardware:
@@ -221,7 +222,8 @@ def system_hardware_peripherals(stop_event):
                 for sensor in sub.Sensors:
                     if (sensor.SensorType == SensorType.Temperature or sensor.SensorType == SensorType.Load or
                         sensor.SensorType == SensorType.Clock or sensor.SensorType == SensorType.Power):
-                        sum += int(sensor.Value)
+                        if sensor.Value:
+                            sum += int(sensor.Value)
                         # print(hw.Name, sensor.Name, sensor.Value)
 
         map_value_to_image(sum, IMAGE_SYSTEM_HW)
