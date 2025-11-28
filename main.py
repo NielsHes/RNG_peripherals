@@ -267,25 +267,12 @@ def main():
     mouse_listener.start()
     keyboard_listener.start()
 
-    # Actions on program exit
-    def on_exit():
-        print("\nProgram exiting. Stopping listeners...")
-        mouse_listener.stop()
-        keyboard_listener.stop()
-        print_trackpad(IMAGE_MOUSE)
-        print()
-        print_trackpad(IMAGE_KEYBOARD)
-        print()
-        print_trackpad(IMAGE_SYSTEM_HW)
-
-    atexit.register(on_exit)
-
     nr_m = nr_k = nr_c = nr_hw = 0
 
     # Keep program alive until keyboard interrupt
     try:
         while True:
-            time.sleep(1)
+            time.sleep(3)
 
             if ACTIVE_MOUSE:
                 nr_m += 1
@@ -303,7 +290,6 @@ def main():
                 nr_hw += 1
                 print("IDLE", nr_hw)
                 map_image_to_256(IMAGE_SYSTEM_HW, "idle")
-            print()
             
             ACTIVE_MOUSE, ACTIVE_KEYBOARD = False, False
             IMAGE_MOUSE = [[' ' for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
@@ -314,6 +300,8 @@ def main():
         print("Keyboard interrupt received. Exiting...")
         stop_event.set()
         system_hardware_thread.join()
+        mouse_listener.stop()
+        keyboard_listener.stop()
 
 
 if __name__ == "__main__":
