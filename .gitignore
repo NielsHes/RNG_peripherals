@@ -207,5 +207,8 @@ marimo/_lsp/
 __marimo__/
 
 # Data files
-# *.csv
-# *.txt
+*.csv
+*.txt
+
+# NIST files
+sts-2.1.2

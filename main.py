@@ -12,7 +12,7 @@ import clr
 clr.AddReference(r'C:/Users/niels/Documents/S_SS/OpenHardwareMonitor/OpenHardwareMonitorLib') 
 from OpenHardwareMonitor.Hardware import Computer, SensorType
 
-# Maybe use fan rotation speed peripheral if possible?
+# Maybe use fan rotation speed peripheral if possible? nope
 HEADS, TAILS = 0, 0
 
 BIT_SIZE = 256
@@ -39,10 +39,12 @@ IMAGE_SYSTEM_HW = [[' ' for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
 def get_milliseconds():
     return int(tm.time() * 1000)
 
+
 # Write random number to TXT file
 def write_rn(number, peripheral):
     with open(f"{PATH}\{peripheral}_rns.txt", "a", newline="", encoding="utf-8") as file:
         file.write(f"{number}")
+
 
 # Write to CSV file
 def log_event(peripheral, event, details):
@@ -51,15 +53,16 @@ def log_event(peripheral, event, details):
         writer = csv.writer(file)
         writer.writerow([timestamp, peripheral, event, details])
 
+
 # Map mouse coordinates on screen to 64x64 grid
 def map_mouse_to_image(x, y):
     x_small = int(x / SCREEN_WIDTH * IMG_SIZE)
     y_small = int(y / SCREEN_HEIGHT * IMG_SIZE)
-    
+
     # Clamp values just in case
     x_small = min(max(x_small, 0), IMG_SIZE - 1)
     y_small = min(max(y_small, 0), IMG_SIZE - 1)
-    
+
     return x_small, y_small
 
 # Function mapping values to coordinates in 64x64 grid
@@ -71,15 +74,18 @@ def map_value_to_image(value, image):
 
 # Compute the XOR of two images
 def xor_images(image1, image2):
-    xor_image = [[' ' for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
+    xor_image = [[" " for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
 
     for i in range(IMG_SIZE):
         for j in range(IMG_SIZE):
-            if (image1[i][j] == '*' and not image2[i][j] == '*') or (not image1[i][j] == '*' and image2[i][j] == '*'):
-                
-                xor_image[i][j] = '*'
+            if (image1[i][j] == "*" and not image2[i][j] == "*") or (
+                not image1[i][j] == "*" and image2[i][j] == "*"
+            ):
 
-    return xor_image    
+                xor_image[i][j] = "*"
+
+    return xor_image
+
 
 # Mapping the IMAGE to a 256 bit RAND_NUMBER
 def map_image_to_256(image, peripheral):
@@ -94,7 +100,7 @@ def map_image_to_256(image, peripheral):
             count = 0
             for x in range(4):
                 for y in range(4):
-                    if image[i+x][j+y] == '*':
+                    if image[i + x][j + y] == "*":
                         count += 1
                         indices += i+x + j+y
 
@@ -121,6 +127,7 @@ def compute_chaotic_map():
                 y_new = int((y_map + K * np.sin(N / 2 * np.pi)) % N)
                 CHAOTIC_MAP[x][y] = (x_new, y_new)
 
+
 # Chaotic map of IMAGE (WORK IN PROGRESS)
 def map_chaotic(image):
     image_chaotic = [[' ' for _ in range(IMG_SIZE)] for _ in range(IMG_SIZE)]
@@ -137,8 +144,9 @@ def map_chaotic(image):
 def print_trackpad(image):
     for i in range(IMG_SIZE):
         for j in range(IMG_SIZE):
-            print(image[i][j], end=' ')
+            print(image[i][j], end=" ")
         print()
+
 
 # Action on move of mouse
 def on_move(x, y, injected):
@@ -147,20 +155,22 @@ def on_move(x, y, injected):
     log_event("mouse", "move", f"{x}, {y}")
     ACTIVE_MOUSE = True
 
-    x, y = map_mouse_to_image(x,y)
-    IMAGE_MOUSE[y][x] = '*'
+    x, y = map_mouse_to_image(x, y)
+    IMAGE_MOUSE[y][x] = "*"
 
     # print('Pointer moved to {}; it was {}'.format(
     #     (x, y), 'faked' if injected else 'not faked'))
 
+
 # Action on click of mouse
 def on_click(x, y, button, pressed, injected):
-    details = 'pressed' if pressed else 'released'
+    details = "pressed" if pressed else "released"
     log_event("mouse", "click", f"{button} {details} at {x}, {y}")
 
     # print('{} at {}; it was {}'.format(
     #     'Pressed' if pressed else 'Released',
     #     (x, y), 'faked' if injected else 'not faked'))
+
 
 # Action on scroll of mouse
 def on_scroll(x, y, dx, dy, injected):
@@ -169,6 +179,7 @@ def on_scroll(x, y, dx, dy, injected):
     # print('Scrolled {} and {} at {}; it was {}'.format(
     #     'down' if dy < 0 else 'up', 'left' if dx < 0 else 'right',
     #     (x, y), 'faked' if injected else 'not faked'))
+
 
 # Action on press of keyboard key
 def on_press(key):
@@ -187,6 +198,7 @@ def on_press(key):
     map_value_to_image(value_key, IMAGE_KEYBOARD)
 
     # print(f'Key {key} pressed')  # Print pressed key
+
 
 # Action on release of keyboard key
 def on_release(key):
@@ -253,14 +265,11 @@ def main():
 
     # Mouse listener
     mouse_listener = mouse.Listener(
-        on_move=on_move,
-        on_click=on_click,
-        on_scroll=on_scroll)
+        on_move=on_move, on_click=on_click, on_scroll=on_scroll
+    )
 
     # Keyboard listener
-    keyboard_listener = keyboard.Listener(
-        on_press=on_press,
-        on_release=on_release)
+    keyboard_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
 
     # Start recording and listening
     system_hardware_thread.start()
