@@ -34,4 +34,4 @@ Now all requirements should be satisfied to run the program. The program is impl
 
 The program will now start running and the results will be written to the correct .txt files. When you want to exit the program, simply pres "Ctrl+c" and the program will be nicely terminated. You can also see all registered activities of mouse and keyboard in "./data/interactions.csv".
 
-### basic_analysis.py
+### basic_analysis.ipynb
